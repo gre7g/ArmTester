@@ -1,5 +1,5 @@
 import logging
-from mock import Mock
+from mock import Mock, call
 from unittest import TestCase
 
 from arm_tester.arm_program import Program
@@ -33,3 +33,4 @@ class TestSimple(TestCase):
 
         self.assertEqual(self.vm.run(random12), 5)
         randomBits.mock.assert_called_once_with(12)
+        self.vm.mocks.assert_has_calls([call.randomBits(12)])

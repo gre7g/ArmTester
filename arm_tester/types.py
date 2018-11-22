@@ -21,7 +21,7 @@ class TypeClass(object):
         return str(value)
 
     def get_python(self, value):
-        return value
+        return int(value)
 
     def return_value(self, value, program):
         program.uc.reg_write(arm.UC_ARM_REG_R0, value)
