@@ -17,6 +17,14 @@ REGISTER_SIZE = 0xe6400
 LOG = logging.getLogger(__name__)
 
 
+class Unsigned16(object):
+    def __init__(self, name=None):
+        self.name = name
+
+    def decode(self, value):
+        return str(value)
+
+
 class Instruction(object):
     def __init__(self, match, lines_before=""):
         self.text = match.string.rstrip()
@@ -35,10 +43,32 @@ class Function(object):
         self.addr = int(addr, 16)
 
 
+class Parameter(object):
+    def __init__(self, index, type_obj):
+        self.index, self.type_obj = index, type_obj
+
+    def decode(self, program):
+        value = program.uc.reg_read(arm.UC_ARM_REG_R0 + self.index)  # TODO: maximum?
+        return self.type_obj.decode(value)
+
+
+class Prototype(object):
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.params = tuple(Parameter(index, arg) for index, arg in enumerate(args))
+        self.returns = kwargs.get("returns")
+
+    def log_entry(self, program):
+        params = ", ".join(param.decode(program) for param in self.params)
+        LOG.info("entered %s(%s)", self.func, params)
+
+
 class Program(object):
     def __init__(self, disassembly, binary):
         self.funcs_by_name = {}
+        self.funcs_by_addr = {}
         self.inst_by_addr = {}
+        self.protos_by_name = {}
         self.register_to_log = None
         self.first_instruction = True
         self.uc = unicorn.Uc(unicorn.UC_ARCH_ARM, unicorn.UC_MODE_THUMB)
@@ -71,6 +101,7 @@ class Program(object):
                     function = Function(match)
                     if function.name not in self.funcs_by_name:
                         self.funcs_by_name[function.name] = function
+                        self.funcs_by_addr[function.addr] = function
                 else:
                     match = LINE.search(line)
                     if match:
@@ -118,6 +149,8 @@ class Program(object):
         while True:
             pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
             if pc in self.break_points:
+                func = self.funcs_by_addr[pc]
+                self.protos_by_name[func.name].log_entry(self)
                 LOG.info("breakpoint hit: 0x%x", pc)
                 break
             else:
@@ -125,4 +158,11 @@ class Program(object):
                 self.uc.emu_start(pc | 1, 4, count=1)
 
     def set_breakpoints(self, break_points):
-        self.break_points = [self.funcs_by_name[func].addr for func in break_points]
+        self.break_points = []
+        for func in break_points:
+            assert func in self.protos_by_name, ('No prototype known for function "%s"' % func)
+            self.break_points.append(self.funcs_by_name[func].addr)
+
+    def set_func_proto(self, func, *args, **kwargs):
+        prototype = Prototype(func, *args, **kwargs)
+        self.protos_by_name[func] = prototype
