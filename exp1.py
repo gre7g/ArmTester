@@ -1,4 +1,5 @@
 import logging
+from mock import Mock
 
 from arm_program import Program, Unsigned16
 
@@ -17,5 +18,6 @@ if __name__ == "__main__":
     program.set_func_proto("random12", returns=Unsigned16())
     program.set_func_proto("randomBits", Unsigned16("bits"), returns=Unsigned16())
     program.set_sp(STACK_START)
-    program.set_breakpoints(BREAK_POINTS)
+    program.patch("randomBits", Mock(return_value=5))
+    # program.set_breakpoints(BREAK_POINTS)
     program.run(DEBUG_FUNC)

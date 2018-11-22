@@ -13,6 +13,7 @@ RAM_START = 0x20000000
 RAM_SIZE = 128 * 1024
 REGISTER_START = 0x40000000
 REGISTER_SIZE = 0xe6400
+END_OF_EXECUTION = 0x30000000  # special token
 
 LOG = logging.getLogger(__name__)
 
@@ -23,6 +24,9 @@ class Unsigned16(object):
 
     def decode(self, value):
         return str(value)
+
+    def return_value(self, value, program):
+        program.uc.reg_write(arm.UC_ARM_REG_R0, value)
 
 
 class Instruction(object):
@@ -62,6 +66,17 @@ class Prototype(object):
         params = ", ".join(param.decode(program) for param in self.params)
         LOG.info("entered %s(%s)", self.func, params)
 
+    def return_value(self, value, program):
+        self.returns.return_value(value, program)
+
+
+class Patch(object):
+    def __init__(self, prototype, mock):
+        self.prototype, self.mock = prototype, mock
+
+    def execute(self, program):
+        self.prototype.return_value(self.mock(), program)
+
 
 class Program(object):
     def __init__(self, disassembly, binary):
@@ -73,11 +88,13 @@ class Program(object):
         self.first_instruction = True
         self.uc = unicorn.Uc(unicorn.UC_ARCH_ARM, unicorn.UC_MODE_THUMB)
         self.break_points = []
+        self.patches_by_addr = {}
 
         # Allocate memory
         self.uc.mem_map(FLASH_START, FLASH_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)
         self.uc.mem_map(RAM_START, RAM_SIZE, unicorn.UC_PROT_ALL)
         self.uc.mem_map(REGISTER_START, REGISTER_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_WRITE)
+        self.uc.mem_map(END_OF_EXECUTION, 1024, unicorn.UC_PROT_EXEC)
 
         # Load code
         with open(binary, "rb") as file_obj:
@@ -134,8 +151,9 @@ class Program(object):
         self.uc.reg_write(arm.UC_ARM_REG_SP, addr)
 
     def start(self, func):
+        # Note we start at ADDRESS | 1 to indicate THUMB mode
+        self.uc.reg_write(arm.UC_ARM_REG_LR, END_OF_EXECUTION | 1)
         self.first_instruction = True
-        # Note we start at ADDRESS | 1 to indicate THUMB mode.
         self.uc.emu_start(self.funcs_by_name[func].addr | 1, 4, count=1)
 
     def step(self):
@@ -148,11 +166,20 @@ class Program(object):
         self.start(func)
         while True:
             pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
-            if pc in self.break_points:
+            if pc == END_OF_EXECUTION:
+                LOG.debug("execution complete")
+                break
+            elif pc in self.break_points:
                 func = self.funcs_by_addr[pc]
                 self.protos_by_name[func.name].log_entry(self)
                 LOG.info("breakpoint hit: 0x%x", pc)
                 break
+            elif pc in self.patches_by_addr:
+                patch = self.patches_by_addr[pc]
+                patch.execute(self)
+                lr = self.uc.reg_read(arm.UC_ARM_REG_LR)
+                self.first_instruction = True
+                self.uc.emu_start(lr, 4, count=1)
             else:
                 self.first_instruction = True
                 self.uc.emu_start(pc | 1, 4, count=1)
@@ -166,3 +193,7 @@ class Program(object):
     def set_func_proto(self, func, *args, **kwargs):
         prototype = Prototype(func, *args, **kwargs)
         self.protos_by_name[func] = prototype
+
+    def patch(self, func, mock):
+        assert func in self.protos_by_name, ('No prototype known for function "%s"' % func)
+        self.patches_by_addr[self.funcs_by_name[func].addr] = Patch(self.protos_by_name[func], mock)
