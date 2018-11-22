@@ -7,7 +7,7 @@ import logging
 import unicorn
 import unicorn.arm_const as arm
 
-from extract_bin import Program
+from arm_program import Program
 
 DISASSEMBLY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\with_source.lst"
 BINARY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\SnapEFR32MG12.bin"
