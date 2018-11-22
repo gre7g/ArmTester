@@ -42,6 +42,7 @@ class Program(object):
         self.register_to_log = None
         self.first_instruction = True
         self.uc = unicorn.Uc(unicorn.UC_ARCH_ARM, unicorn.UC_MODE_THUMB)
+        self.break_points = []
 
         # Allocate memory
         self.uc.mem_map(FLASH_START, FLASH_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)
@@ -85,7 +86,7 @@ class Program(object):
         if self.first_instruction:
             self.first_instruction = False
 
-            if self.register_to_log:
+            if self.register_to_log is not None:
                 LOG.debug("r%d = %08x", self.register_to_log, uc.reg_read(arm.UC_ARM_REG_R0 + self.register_to_log))
                 self.register_to_log = None
             if address in self.inst_by_addr:
@@ -102,6 +103,7 @@ class Program(object):
         self.uc.reg_write(arm.UC_ARM_REG_SP, addr)
 
     def start(self, func):
+        self.first_instruction = True
         # Note we start at ADDRESS | 1 to indicate THUMB mode.
         self.uc.emu_start(self.funcs_by_name[func].addr | 1, 4, count=1)
 
@@ -110,3 +112,17 @@ class Program(object):
         pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
         # Note we start at ADDRESS | 1 to indicate THUMB mode.
         self.uc.emu_start(pc | 1, 4, count=1)
+
+    def run(self, func):
+        self.start(func)
+        while True:
+            pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
+            if pc in self.break_points:
+                LOG.info("breakpoint hit: 0x%x", pc)
+                break
+            else:
+                self.first_instruction = True
+                self.uc.emu_start(pc | 1, 4, count=1)
+
+    def set_breakpoints(self, break_points):
+        self.break_points = [self.funcs_by_name[func].addr for func in break_points]
