@@ -1,7 +1,7 @@
 import logging
 from mock import Mock
 
-from arm_program import Program, Unsigned16
+from arm_tester.arm_program import Program, Unsigned16
 
 DISASSEMBLY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\with_source.lst"
 BINARY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\SnapEFR32MG12.bin"
