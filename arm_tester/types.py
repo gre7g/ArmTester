@@ -20,6 +20,9 @@ class TypeClass(object):
     def decode(self, value):
         return str(value)
 
+    def get_python(self, value):
+        return value
+
     def return_value(self, value, program):
         program.uc.reg_write(arm.UC_ARM_REG_R0, value)
 
@@ -84,12 +87,27 @@ class Parameter(object):
         value = program.uc.reg_read(arm.UC_ARM_REG_R0 + self.index)  # TODO: maximum?
         return self.type_obj.decode(value)
 
+    def get_python(self, program):
+        value = program.uc.reg_read(arm.UC_ARM_REG_R0 + self.index)  # TODO: maximum?
+        return self.type_obj.get_python(value)
+
+
+class Patch(object):
+    def __init__(self, prototype, mock):
+        self.prototype, self.mock = prototype, mock
+
+    def execute(self, program, *args):
+        return_value = self.mock(*args)
+        self.prototype.log_entry(program, return_value=return_value)
+        self.prototype.return_value(return_value, program)
+
 
 class Prototype(object):
-    def __init__(self, func, *args, **kwargs):
-        self.func = func
+    def __init__(self, program, func, addr, *args, **kwargs):
+        self.program, self.func, self.addr = program, func, addr
         self.params = tuple(Parameter(index, arg) for index, arg in enumerate(args))
         self.returns = kwargs.get("returns")
+        self.mock = None
 
     def log_entry(self, program, return_value=None):
         params = ", ".join(param.decode(program) for param in self.params)
@@ -100,3 +118,11 @@ class Prototype(object):
 
     def return_value(self, value, program):
         self.returns.return_value(value, program)
+
+    def patch(self, mock):
+        self.program.patches_by_addr[self.addr] = Patch(self, mock)
+        self.mock = mock
+        return mock
+
+    def get_args(self, program):
+        return tuple(param.get_python(program) for param in self.params)
