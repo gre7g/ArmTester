@@ -3,6 +3,8 @@ import re
 import unicorn
 import unicorn.arm_const as arm
 
+from arm_tester.types import Unsigned16, Prototype
+
 FUNCTION_BEGIN = re.compile(r"^([0-9a-f]{8}) <(\w+)>:")
 LINE = re.compile(r"^\s+([0-9a-f]+):\s+([0-9a-f]+) ([0-9a-f]{4})?\s+\S+(.*)")
 REGISTER_PORTION = re.compile(r"^\s+r(\d+),")
@@ -16,17 +18,6 @@ REGISTER_SIZE = 0xe6400
 END_OF_EXECUTION = 0x30000000  # special token
 
 LOG = logging.getLogger(__name__)
-
-
-class Unsigned16(object):
-    def __init__(self, name=None):
-        self.name = name
-
-    def decode(self, value):
-        return str(value)
-
-    def return_value(self, value, program):
-        program.uc.reg_write(arm.UC_ARM_REG_R0, value)
 
 
 class Instruction(object):
@@ -45,32 +36,6 @@ class Function(object):
     def __init__(self, match):
         addr, self.name = match.groups()
         self.addr = int(addr, 16)
-
-
-class Parameter(object):
-    def __init__(self, index, type_obj):
-        self.index, self.type_obj = index, type_obj
-
-    def decode(self, program):
-        value = program.uc.reg_read(arm.UC_ARM_REG_R0 + self.index)  # TODO: maximum?
-        return self.type_obj.decode(value)
-
-
-class Prototype(object):
-    def __init__(self, func, *args, **kwargs):
-        self.func = func
-        self.params = tuple(Parameter(index, arg) for index, arg in enumerate(args))
-        self.returns = kwargs.get("returns")
-
-    def log_entry(self, program, return_value=None):
-        params = ", ".join(param.decode(program) for param in self.params)
-        if return_value is None:
-            LOG.info("entered %s(%s)", self.func, params)
-        else:
-            LOG.info("%s(%s) => %s", self.func, params, self.returns.decode(return_value))
-
-    def return_value(self, value, program):
-        self.returns.return_value(value, program)
 
 
 class Patch(object):
