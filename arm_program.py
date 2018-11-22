@@ -62,9 +62,12 @@ class Prototype(object):
         self.params = tuple(Parameter(index, arg) for index, arg in enumerate(args))
         self.returns = kwargs.get("returns")
 
-    def log_entry(self, program):
+    def log_entry(self, program, return_value=None):
         params = ", ".join(param.decode(program) for param in self.params)
-        LOG.info("entered %s(%s)", self.func, params)
+        if return_value is None:
+            LOG.info("entered %s(%s)", self.func, params)
+        else:
+            LOG.info("%s(%s) => %s", self.func, params, self.returns.decode(return_value))
 
     def return_value(self, value, program):
         self.returns.return_value(value, program)
@@ -75,7 +78,9 @@ class Patch(object):
         self.prototype, self.mock = prototype, mock
 
     def execute(self, program):
-        self.prototype.return_value(self.mock(), program)
+        return_value = self.mock()
+        self.prototype.log_entry(program, return_value=return_value)
+        self.prototype.return_value(return_value, program)
 
 
 class Program(object):
@@ -167,8 +172,10 @@ class Program(object):
         while True:
             pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
             if pc == END_OF_EXECUTION:
-                LOG.debug("execution complete")
-                break
+                returns = self.protos_by_name[func].returns
+                value = self.uc.reg_read(arm.UC_ARM_REG_R0)
+                LOG.debug("execution complete (return=%s)", returns.decode(value))
+                return value
             elif pc in self.break_points:
                 func = self.funcs_by_addr[pc]
                 self.protos_by_name[func.name].log_entry(self)
