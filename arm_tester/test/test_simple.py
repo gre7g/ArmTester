@@ -3,7 +3,7 @@ from mock import Mock, call
 from unittest import TestCase
 
 from arm_tester.arm_program import Program
-from arm_tester.types import Unsigned16, Unsigned8, PointerTo, Boolean
+from arm_tester.types import Unsigned16, Unsigned8, PointerTo, Boolean, Char, ArrayOf
 
 DISASSEMBLY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\with_source.lst"
 BINARY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\SnapEFR32MG12.bin"
@@ -25,7 +25,7 @@ class TestSimple(TestCase):
         self.vm.set_sp(STACK_START)
         self.vm.set_heap(HEAP_START)
 
-    def test1(self):
+    def test_u16(self):
         # U16 random12()
         random12 = self.vm.set_func_proto("random12", returns=Unsigned16())
         # U16 randomBits(U8 bits)
@@ -38,7 +38,7 @@ class TestSimple(TestCase):
         randomBits.mock.assert_called_once_with(12)
         self.vm.mocks.assert_has_calls([call.randomBits(12)])
 
-    def test2(self):
+    def test_pointer(self):
         # void writeBit(U8 DECL_FASTRAM * bitset, U8 whichBit, Boolean value)
         writeBit = self.vm.set_func_proto("writeBit",
                                           PointerTo(Unsigned8("bitset")), Unsigned8("whichBit"), Boolean("value"))
@@ -48,3 +48,12 @@ class TestSimple(TestCase):
         writeBit(memory, 3, True)
         writeBit(memory, 2, False)
         self.assertEqual(memory.read(self.vm), 0x59)
+
+    def test_string(self):
+        # char DECL_RAM *mystrrev(char DECL_RAM *head, char DECL_RAM *tail)
+        mystrrev = self.vm.set_func_proto("mystrrev", PointerTo(Char("head")), PointerTo(Char("tail")))
+
+        memory = PointerTo(ArrayOf(Char()))
+        memory.alloc(self.vm, "1234567890")
+        mystrrev(memory, memory + 9)
+        self.assertEqual(memory.read(self.vm), "0987654321")

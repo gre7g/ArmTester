@@ -35,6 +35,12 @@ class TypeClass(object):
     def return_value(self, value, program):
         program.uc.reg_write(arm.UC_ARM_REG_R0, value)
 
+    def set_size(self, size):
+        pass
+
+    def set_addr(self, addr):
+        pass
+
 
 class Void(TypeClass):
     def value(self, value):
@@ -43,6 +49,13 @@ class Void(TypeClass):
 
 class Boolean(TypeClass):
     TEMPLATE = "?"
+
+
+class Char(TypeClass):
+    TEMPLATE = "B"
+
+    def from_memory(self, uc, addr):
+        return uc.mem_read(addr, 1)
 
 
 class Unsigned8(TypeClass):
@@ -85,7 +98,9 @@ class PointerTo(TypeClass):
 
     def alloc(self, program, value):
         string = self.obj.encode(value)
+        self.obj.set_size(len(string))
         self.addr = program.alloc(len(string))
+        self.obj.set_addr(self.addr)
         program.uc.mem_write(self.addr, string)
 
     def write(self, program, value):
@@ -98,9 +113,48 @@ class PointerTo(TypeClass):
     def value(self, value):
         return value.addr
 
+    def __add__(self, other):
+        obj = PointerTo(self.obj)
+        obj.addr = self.addr + other
+        return obj
+
 
 class ArrayOf(TypeClass):
-    pass
+    def __init__(self, obj):
+        TypeClass.__init__(self, None)
+        self.obj = obj
+        self.count = 0
+        self.addr = None
+
+    def encode(self, value):
+        return value + "\x00"
+
+    def from_memory(self, uc, addr):
+        if isinstance(self.obj, Char):
+            return_value = ""
+            for index in xrange(self.count):
+                return_value += self.obj.from_memory(uc, self.addr + index)
+                if "\x00" in return_value:
+                    return_value = return_value[:return_value.index("\x00")]
+        else:
+            size_per = self.obj.get_length()
+            return_value = []
+            for index in xrange(self.count):
+                return_value.append(self.obj.from_memory(uc, self.addr + index))
+
+        return return_value
+
+    def set_size(self, size):
+        size_per = self.obj.get_length()
+        assert (size % size_per) == 0, "Partial array element"
+        self.count = size / size_per
+
+    def get_length(self):
+        return self.count * self.obj.get_length()
+
+    def set_addr(self, addr):
+        self.addr = addr
+
 
 
 class EnumOf(TypeClass):
