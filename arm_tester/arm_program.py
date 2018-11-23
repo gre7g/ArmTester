@@ -39,6 +39,15 @@ class Function(object):
         self.addr = int(addr, 16)
 
 
+def function_caller(program):
+    class CallerClass(object):
+        def __getattr__(self, item):
+            def caller(*args):
+                return program.run(program.protos_by_name[item], *args)
+            return caller
+    return CallerClass()
+
+
 class Program(object):
     def __init__(self, disassembly, binary):
         self.funcs_by_name = {}
@@ -51,6 +60,7 @@ class Program(object):
         self.break_points = []
         self.patches_by_addr = {}
         self.mocks = Mock()
+        self.functions = function_caller(self)
 
         # Allocate memory
         self.uc.mem_map(FLASH_START, FLASH_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)

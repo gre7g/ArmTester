@@ -27,8 +27,12 @@ class TypeClass(object):
         program.uc.reg_write(arm.UC_ARM_REG_R0, value)
 
 
+class Boolean(TypeClass):
+    TEMPLATE = "?"
+
+
 class Unsigned8(TypeClass):
-    TEMPLATE = "<B"
+    TEMPLATE = "B"
 
 
 class Unsigned16(TypeClass):
@@ -40,7 +44,7 @@ class Unsigned32(TypeClass):
 
 
 class Signed8(TypeClass):
-    TEMPLATE = "<b"
+    TEMPLATE = "b"
 
 
 class Signed16(TypeClass):
