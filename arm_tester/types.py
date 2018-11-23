@@ -96,16 +96,6 @@ class Parameter(object):
         return self.type_obj.get_python(value)
 
 
-class Patch(object):
-    def __init__(self, prototype, mock):
-        self.prototype, self.mock = prototype, mock
-
-    def execute(self, program, *args):
-        return_value = self.mock(*args)
-        self.prototype.log_entry(program, return_value=return_value)
-        self.prototype.return_value(return_value, program)
-
-
 class Prototype(object):
     def __init__(self, program, func, addr, *args, **kwargs):
         self.program, self.func, self.addr = program, func, addr
@@ -122,11 +112,6 @@ class Prototype(object):
 
     def return_value(self, value, program):
         self.returns.return_value(value, program)
-
-    def patch(self, mock):
-        self.program.patches_by_addr[self.addr] = Patch(self, mock)
-        self.mock = mock
-        return mock
 
     def get_args(self, program):
         return tuple(param.get_python(program) for param in self.params)

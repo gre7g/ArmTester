@@ -31,7 +31,7 @@ class TestSimple(TestCase):
         # TODO: add patch notation
         randomBits.patch(Mock(return_value=5))
 
-        self.assertEqual(self.vm.functions.random12(), 5)
+        self.assertEqual(random12(), 5)
         randomBits.mock.assert_called_once_with(12)
         self.vm.mocks.assert_has_calls([call.randomBits(12)])
 
@@ -39,3 +39,7 @@ class TestSimple(TestCase):
     #     # void writeBit(U8 DECL_FASTRAM * bitset, U8 whichBit, Boolean value)
     #     writeBit = self.vm.set_func_proto("writeBit",
     #                                       PointerTo(Unsigned8("bitset")), Unsigned8("whichBit"), Boolean("value"))
+    #
+    #     memory = PointerTo(Unsigned8())
+    #     memory.write(self.vm, 0x55)
+    #     self.vm.functions.

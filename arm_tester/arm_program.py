@@ -39,13 +39,14 @@ class Function(object):
         self.addr = int(addr, 16)
 
 
-def function_caller(program):
-    class CallerClass(object):
-        def __getattr__(self, item):
-            def caller(*args):
-                return program.run(program.protos_by_name[item], *args)
-            return caller
-    return CallerClass()
+class Patch(object):
+    def __init__(self, prototype, mock):
+        self.prototype, self.mock = prototype, mock
+
+    def execute(self, program, *args):
+        return_value = self.mock(*args)
+        self.prototype.log_entry(program, return_value=return_value)
+        self.prototype.return_value(return_value, program)
 
 
 class Program(object):
@@ -60,7 +61,6 @@ class Program(object):
         self.break_points = []
         self.patches_by_addr = {}
         self.mocks = Mock()
-        self.functions = function_caller(self)
 
         # Allocate memory
         self.uc.mem_map(FLASH_START, FLASH_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)
@@ -168,9 +168,23 @@ class Program(object):
             self.break_points.append(self.funcs_by_name[func].addr)
 
     def set_func_proto(self, func, *args, **kwargs):
+        program = self
         prototype = Prototype(self, func, self.funcs_by_name[func].addr, *args, **kwargs)
         self.protos_by_name[func] = prototype
-        return prototype
+
+        class CallerClass(object):
+            def __init__(self):
+                self.mock = None
+
+            def __call__(self, *args):
+                return program.run(prototype, *args)
+
+            def patch(self, mock):
+                self.mock = mock
+                program.patches_by_addr[prototype.addr] = Patch(prototype, mock)
+                return mock
+
+        return CallerClass()
 
     def flush_allocs(self):
         pass
