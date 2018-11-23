@@ -61,6 +61,7 @@ class Program(object):
         self.break_points = []
         self.patches_by_addr = {}
         self.mocks = Mock()
+        self.heap = None
 
         # Allocate memory
         self.uc.mem_map(FLASH_START, FLASH_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)
@@ -76,6 +77,9 @@ class Program(object):
         self.uc.hook_add(unicorn.UC_HOOK_CODE, self.hook_code)
 
         self.parse_disassembly(disassembly)
+
+    def set_heap(self, addr):
+        self.heap = addr
 
     def parse_disassembly(self, disassembly):
         lines_before = ""
@@ -122,7 +126,8 @@ class Program(object):
     def set_sp(self, addr):
         self.uc.reg_write(arm.UC_ARM_REG_SP, addr)
 
-    def start(self, prototype):
+    def start(self, prototype, *args):
+        prototype.set_args(*args)
         # Note we start at ADDRESS | 1 to indicate THUMB mode
         self.uc.reg_write(arm.UC_ARM_REG_LR, END_OF_EXECUTION | 1)
         self.first_instruction = True
@@ -134,8 +139,8 @@ class Program(object):
         # Note we start at ADDRESS | 1 to indicate THUMB mode.
         self.uc.emu_start(pc | 1, 4, count=1)
 
-    def run(self, prototype):
-        self.start(prototype)
+    def run(self, prototype, *args):
+        self.start(prototype, *args)
         while True:
             pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
             if pc == END_OF_EXECUTION:
@@ -186,5 +191,7 @@ class Program(object):
 
         return CallerClass()
 
-    def flush_allocs(self):
-        pass
+    def alloc(self, size):
+        addr = self.heap
+        self.heap += size
+        return addr
