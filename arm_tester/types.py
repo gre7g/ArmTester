@@ -20,8 +20,10 @@ class TypeClass(object):
     def get_length(self):
         return struct.calcsize(self.TEMPLATE)
 
-    def from_memory(self, uc, addr):
-        return struct.unpack(self.TEMPLATE, uc.mem_read(addr, self.get_length()))[0]
+    def from_memory(self, uc, addr, length=None):
+        if length is None:
+            length = self.get_length()
+        return struct.unpack(self.TEMPLATE, uc.mem_read(addr, length))[0]
 
     def decode(self, value):
         return str(value)
@@ -54,7 +56,7 @@ class Boolean(TypeClass):
 class Char(TypeClass):
     TEMPLATE = "B"
 
-    def from_memory(self, uc, addr):
+    def from_memory(self, uc, addr, length=None):
         return uc.mem_read(addr, 1)
 
 
@@ -107,17 +109,24 @@ class PointerTo(TypeClass):
         string = self.obj.encode(value)
         program.uc.mem_write(self.addr, string)
 
-    def read(self, program):
-        return self.obj.from_memory(program.uc, self.addr)
+    def read(self, program, length=None):
+        return self.obj.from_memory(program.uc, self.addr, length)
 
     def value(self, value):
         return value.addr
+
+    def get_python(self, value):
+        obj = PointerTo(self.obj)
+        obj.addr = value
+        return obj
 
     def __add__(self, other):
         obj = PointerTo(self.obj)
         obj.addr = self.addr + other
         return obj
 
+    def __eq__(self, other):
+        return (self.addr is not None) and (self.addr == other.addr)
 
 class ArrayOf(TypeClass):
     def __init__(self, obj):
@@ -129,17 +138,20 @@ class ArrayOf(TypeClass):
     def encode(self, value):
         return value + "\x00"
 
-    def from_memory(self, uc, addr):
+    def from_memory(self, uc, addr, length=None):
+        if length is None:
+            length = self.count
+
         if isinstance(self.obj, Char):
             return_value = ""
-            for index in xrange(self.count):
+            for index in xrange(length):
                 return_value += self.obj.from_memory(uc, self.addr + index)
                 if "\x00" in return_value:
                     return_value = return_value[:return_value.index("\x00")]
         else:
             size_per = self.obj.get_length()
             return_value = []
-            for index in xrange(self.count):
+            for index in xrange(length):
                 return_value.append(self.obj.from_memory(uc, self.addr + index))
 
         return return_value
