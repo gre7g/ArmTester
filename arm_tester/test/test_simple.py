@@ -1,9 +1,10 @@
 import logging
 from mock import Mock, call
+import unicorn.arm_const as arm
 from unittest import TestCase
 
 from arm_tester.arm_program import Program
-from arm_tester.types import Unsigned16, Unsigned8, PointerTo, Boolean, Char, ArrayOf
+from arm_tester.types import Unsigned16, Unsigned8, PointerTo, Boolean, Char, ArrayOf, Signed16
 
 DISASSEMBLY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\with_source.lst"
 BINARY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\SnapEFR32MG12.bin"

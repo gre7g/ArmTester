@@ -17,6 +17,7 @@ RAM_SIZE = 128 * 1024
 REGISTER_START = 0x40000000
 REGISTER_SIZE = 0xe6400
 END_OF_EXECUTION = 0x30000000  # special token
+MAX_INSTRUCTIONS = 1000000
 
 LOG = logging.getLogger(__name__)
 
@@ -139,9 +140,15 @@ class Program(object):
         # Note we start at ADDRESS | 1 to indicate THUMB mode.
         self.uc.emu_start(pc | 1, 4, count=1)
 
-    def run(self, prototype, *args):
+    def run(self, prototype, *args, **kwargs):
+        max_instructions = kwargs.get("max_instructions", MAX_INSTRUCTIONS)
         self.start(prototype, *args)
         while True:
+            if max_instructions:
+                max_instructions -= 1
+            else:
+                raise RuntimeError("max instructions exceeded")
+
             pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
             if pc == END_OF_EXECUTION:
                 returns = self.protos_by_name[prototype.func].returns
@@ -181,8 +188,8 @@ class Program(object):
             def __init__(self):
                 self.mock = None
 
-            def __call__(self, *args):
-                return program.run(prototype, *args)
+            def __call__(self, *args, **kwargs):
+                return program.run(prototype, *args, **kwargs)
 
             def patch(self, mock):
                 self.mock = mock
