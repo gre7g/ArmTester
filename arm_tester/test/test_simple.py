@@ -26,6 +26,9 @@ class TestSimple(TestCase):
         self.vm.set_sp(STACK_START)
         self.vm.set_heap(HEAP_START)
 
+    def tearDown(self):
+        self.vm.unpatch_all()
+
     def test_u16(self):
         # U16 random12()
         random12 = self.vm.set_func_proto("random12", returns=Unsigned16())
@@ -52,9 +55,20 @@ class TestSimple(TestCase):
 
     def test_string(self):
         # char DECL_RAM *mystrrev(char DECL_RAM *head, char DECL_RAM *tail)
-        mystrrev = self.vm.set_func_proto("mystrrev", PointerTo(Char("head")), PointerTo(Char("tail")))
+        mystrrev = self.vm.set_func_proto("mystrrev", PointerTo(Char("head")), PointerTo(Char("tail")),
+                                          returns=PointerTo(Char()))
+        # U8 s16toa(S16 _i, char DECL_RAM * const sbuf, U8 buflen)
+        s16toa = self.vm.set_func_proto("s16toa", Signed16("_i"), PointerTo(Char("sbuf")), Unsigned8("buflen"),
+                                        returns=Unsigned8())
 
         memory = PointerTo(ArrayOf(Char()))
         memory.alloc(self.vm, "1234567890")
-        mystrrev(memory, memory + 9)
+        self.assertEqual(mystrrev(memory, memory + 9), memory)
         self.assertEqual(memory.read(self.vm), "0987654321")
+
+        self.assertEqual(s16toa(0, memory, 11), 1)
+        self.assertEqual(memory.read(self.vm, 1), "0")
+        self.assertEqual(s16toa(32767, memory, 11), 5)
+        self.assertEqual(memory.read(self.vm, 5), "32767")
+        self.assertEqual(s16toa(-32768, memory, 11), 6)
+        self.assertEqual(memory.read(self.vm, 6), "-32768")

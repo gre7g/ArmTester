@@ -43,6 +43,7 @@ class Function(object):
 class Patch(object):
     def __init__(self, prototype, mock):
         self.prototype, self.mock = prototype, mock
+        self.restore_instr = None
 
     def execute(self, program, *args):
         return_value = self.mock(*args)
@@ -57,9 +58,7 @@ class Program(object):
         self.inst_by_addr = {}
         self.protos_by_name = {}
         self.register_to_log = None
-        self.first_instruction = True
         self.uc = unicorn.Uc(unicorn.UC_ARCH_ARM, unicorn.UC_MODE_THUMB)
-        self.break_points = []
         self.patches_by_addr = {}
         self.mocks = Mock()
         self.heap = None
@@ -68,7 +67,6 @@ class Program(object):
         self.uc.mem_map(FLASH_START, FLASH_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)
         self.uc.mem_map(RAM_START, RAM_SIZE, unicorn.UC_PROT_ALL)
         self.uc.mem_map(REGISTER_START, REGISTER_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_WRITE)
-        self.uc.mem_map(END_OF_EXECUTION, 1024, unicorn.UC_PROT_EXEC)
 
         # Load code
         with open(binary, "rb") as file_obj:
@@ -108,76 +106,55 @@ class Program(object):
                             lines_before += line
 
     def hook_code(self, uc, address, size, user_data):
-        if self.first_instruction:
-            self.first_instruction = False
-
-            if self.register_to_log is not None:
-                LOG.debug("r%d = %08x", self.register_to_log, uc.reg_read(arm.UC_ARM_REG_R0 + self.register_to_log))
-                self.register_to_log = None
-            if address in self.inst_by_addr:
-                instruction = self.inst_by_addr[address]
-                if instruction.lines_before:
-                    for line in instruction.lines_before[:-1].split("\n"):
-                        LOG.info("%s", line)
-                LOG.info("%s", instruction.text)
-                self.register_to_log = instruction.register
-            else:
-                LOG.warning("Fetched unknown instruction at %x", address)
+        if self.register_to_log is not None:
+            LOG.debug("r%d = %08x", self.register_to_log, uc.reg_read(arm.UC_ARM_REG_R0 + self.register_to_log))
+            self.register_to_log = None
+        if address in self.inst_by_addr:
+            instruction = self.inst_by_addr[address]
+            if instruction.lines_before:
+                for line in instruction.lines_before[:-1].split("\n"):
+                    LOG.info("%s", line)
+            LOG.info("%s", instruction.text)
+            self.register_to_log = instruction.register
+        else:
+            LOG.warning("Fetched unknown instruction at %x", address)
 
     def set_sp(self, addr):
         self.uc.reg_write(arm.UC_ARM_REG_SP, addr)
 
-    def start(self, prototype, *args):
-        prototype.set_args(*args)
-        # Note we start at ADDRESS | 1 to indicate THUMB mode
-        self.uc.reg_write(arm.UC_ARM_REG_LR, END_OF_EXECUTION | 1)
-        self.first_instruction = True
-        self.uc.emu_start(self.funcs_by_name[prototype.func].addr | 1, 4, count=1)
-
-    def step(self):
-        self.first_instruction = True
-        pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
-        # Note we start at ADDRESS | 1 to indicate THUMB mode.
-        self.uc.emu_start(pc | 1, 4, count=1)
-
     def run(self, prototype, *args, **kwargs):
         max_instructions = kwargs.get("max_instructions", MAX_INSTRUCTIONS)
-        self.start(prototype, *args)
+        prototype.set_args(*args)
+
+        # Set the link location to a specific, bad address. We'll look for a bad fetch from here to know that the
+        # function has completed and tried to return. Note we start at ADDRESS | 1 to indicate THUMB mode.
+        self.uc.reg_write(arm.UC_ARM_REG_LR, END_OF_EXECUTION | 1)
+        self.uc.reg_write(arm.UC_ARM_REG_PC, self.funcs_by_name[prototype.func].addr)
+
         while True:
-            if max_instructions:
-                max_instructions -= 1
+            try:
+                self.uc.emu_start(self.uc.reg_read(arm.UC_ARM_REG_PC) | 1, FLASH_SIZE, count=max_instructions)
+            except unicorn.UcError:
+                pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
+                if pc == END_OF_EXECUTION:
+                    returns = self.protos_by_name[prototype.func].returns
+                    value = self.uc.reg_read(arm.UC_ARM_REG_R0)
+                    LOG.debug("execution complete (return=%s)", returns.decode(value))
+                    return returns.get_python(value)
+                elif pc in self.patches_by_addr:
+                    patch = self.patches_by_addr[pc]
+                    LOG.debug("entering patch %r", patch)
+                    prototype = patch.prototype
+                    args = prototype.get_args(self)
+                    getattr(self.mocks, prototype.func)(*args)
+                    patch.execute(self, *args)
+                    self.uc.reg_write(arm.UC_ARM_REG_PC, self.uc.reg_read(arm.UC_ARM_REG_LR))
+                else:
+                    LOG.debug("exception raised at pc=%08x", pc)
+                    raise
             else:
-                raise RuntimeError("max instructions exceeded")
-
-            pc = self.uc.reg_read(arm.UC_ARM_REG_PC)
-            if pc == END_OF_EXECUTION:
-                returns = self.protos_by_name[prototype.func].returns
-                value = self.uc.reg_read(arm.UC_ARM_REG_R0)
-                LOG.debug("execution complete (return=%s)", returns.decode(value))
-                return value
-            elif pc in self.break_points:
-                func = self.funcs_by_addr[pc]
-                self.protos_by_name[func.name].log_entry(self)
-                LOG.info("breakpoint hit: 0x%x", pc)
+                LOG.debug("maximum instructions executed")
                 break
-            elif pc in self.patches_by_addr:
-                patch = self.patches_by_addr[pc]
-                prototype = patch.prototype
-                args = prototype.get_args(self)
-                getattr(self.mocks, prototype.func)(*args)
-                patch.execute(self, *args)
-                lr = self.uc.reg_read(arm.UC_ARM_REG_LR)
-                self.first_instruction = True
-                self.uc.emu_start(lr, 4, count=1)
-            else:
-                self.first_instruction = True
-                self.uc.emu_start(pc | 1, 4, count=1)
-
-    def set_breakpoints(self, break_points):
-        self.break_points = []
-        for func in break_points:
-            assert func in self.protos_by_name, ('No prototype known for function "%s"' % func)
-            self.break_points.append(self.funcs_by_name[func].addr)
 
     def set_func_proto(self, func, *args, **kwargs):
         program = self
@@ -193,10 +170,20 @@ class Program(object):
 
             def patch(self, mock):
                 self.mock = mock
-                program.patches_by_addr[prototype.addr] = Patch(prototype, mock)
+                program.patches_by_addr[prototype.addr] = patch = Patch(prototype, mock)
+
+                # Replace mocked function with bkpt #0 0xbe00
+                patch.restore_instr = str(program.uc.mem_read(prototype.addr, 2))
+                program.uc.mem_write(prototype.addr, "\x00\xbe")
+
                 return mock
 
         return CallerClass()
+
+    def unpatch_all(self):
+        for addr, patch in self.patches_by_addr.iteritems():
+            self.uc.mem_write(addr, patch.restore_instr)
+        self.patches_by_addr = {}
 
     def alloc(self, size):
         addr = self.heap
