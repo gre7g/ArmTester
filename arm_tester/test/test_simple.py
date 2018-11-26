@@ -1,11 +1,11 @@
 import logging
 from mock import Mock, call
-import unicorn.arm_const as arm
 from unittest import TestCase
 
 from arm_tester.arm_program import Program
 from arm_tester.types import Unsigned16, Unsigned8, PointerTo, Boolean, Char, ArrayOf, Signed16
 
+IGNORE_WORDS = ["DECL_FASTRAM", "DECL_RAM"]
 DISASSEMBLY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\with_source.lst"
 BINARY = r"C:\synapse\insomnia\projects\core\Target\CoreARM\EFR32MG\workspace\SnapEFR32MG12\MGM12P_Debug\SnapEFR32MG12.bin"
 STACK_START = 0x20001000
@@ -22,7 +22,7 @@ class TestSimple(TestCase):
 
     def setUp(self):
         if self.vm is None:
-            TestSimple.vm = Program(DISASSEMBLY, BINARY)
+            TestSimple.vm = Program(DISASSEMBLY, BINARY, IGNORE_WORDS)
         self.vm.set_sp(STACK_START)
         self.vm.set_heap(HEAP_START)
 
@@ -30,10 +30,8 @@ class TestSimple(TestCase):
         self.vm.unpatch_all()
 
     def test_u16(self):
-        # U16 random12()
-        random12 = self.vm.set_func_proto("random12", returns=Unsigned16())
-        # U16 randomBits(U8 bits)
-        randomBits = self.vm.set_func_proto("randomBits", Unsigned16("bits"), returns=Unsigned16())
+        random12 = self.vm.parse_proto("random12")
+        randomBits = self.vm.parse_proto("randomBits")
 
         # TODO: add patch notation
         randomBits.patch(Mock(return_value=5))
@@ -44,8 +42,9 @@ class TestSimple(TestCase):
 
     def test_pointer(self):
         # void writeBit(U8 DECL_FASTRAM * bitset, U8 whichBit, Boolean value)
-        writeBit = self.vm.set_func_proto("writeBit",
-                                          PointerTo(Unsigned8("bitset")), Unsigned8("whichBit"), Boolean("value"))
+        writeBit = self.vm.parse_proto("writeBit")
+        # writeBit = self.vm.set_func_proto("writeBit",
+        #                                   PointerTo(Unsigned8("bitset")), Unsigned8("whichBit"), Boolean("value"))
 
         memory = PointerTo(Unsigned8())
         memory.alloc(self.vm, 0x55)
@@ -55,11 +54,13 @@ class TestSimple(TestCase):
 
     def test_string(self):
         # char DECL_RAM *mystrrev(char DECL_RAM *head, char DECL_RAM *tail)
-        mystrrev = self.vm.set_func_proto("mystrrev", PointerTo(Char("head")), PointerTo(Char("tail")),
-                                          returns=PointerTo(Char()))
+        mystrrev = self.vm.parse_proto("mystrrev")
+        # mystrrev = self.vm.set_func_proto("mystrrev", PointerTo(Char("head")), PointerTo(Char("tail")),
+        #                                   returns=PointerTo(Char()))
         # U8 s16toa(S16 _i, char DECL_RAM * const sbuf, U8 buflen)
-        s16toa = self.vm.set_func_proto("s16toa", Signed16("_i"), PointerTo(Char("sbuf")), Unsigned8("buflen"),
-                                        returns=Unsigned8())
+        s16toa = self.vm.parse_proto("s16toa")
+        # s16toa = self.vm.set_func_proto("s16toa", Signed16("_i"), PointerTo(Char("sbuf")), Unsigned8("buflen"),
+        #                                 returns=Unsigned8())
 
         memory = PointerTo(ArrayOf(Char()))
         memory.alloc(self.vm, "1234567890")

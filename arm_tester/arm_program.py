@@ -4,6 +4,7 @@ import re
 import unicorn
 import unicorn.arm_const as arm
 
+from arm_tester.parse_proto import ProtoParser
 from arm_tester.types import Prototype
 
 FUNCTION_BEGIN = re.compile(r"^([0-9a-f]{8}) <(\w+)>:")
@@ -52,7 +53,7 @@ class Patch(object):
 
 
 class Program(object):
-    def __init__(self, disassembly, binary):
+    def __init__(self, disassembly, binary, ignore_words=None):
         self.funcs_by_name = {}
         self.funcs_by_addr = {}
         self.inst_by_addr = {}
@@ -62,6 +63,7 @@ class Program(object):
         self.patches_by_addr = {}
         self.mocks = Mock()
         self.heap = None
+        self.proto_parser = ProtoParser(ignore_words)
 
         # Allocate memory
         self.uc.mem_map(FLASH_START, FLASH_SIZE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)
@@ -155,6 +157,11 @@ class Program(object):
             else:
                 LOG.debug("maximum instructions executed")
                 break
+
+    def parse_proto(self, func):
+        instruction = self.inst_by_addr[self.funcs_by_name[func].addr]
+        name, returns, args = self.proto_parser.parse(instruction.lines_before)
+        return self.set_func_proto(name, *args, returns=returns)
 
     def set_func_proto(self, func, *args, **kwargs):
         program = self
