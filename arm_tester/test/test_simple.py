@@ -33,7 +33,6 @@ class TestSimple(TestCase):
         random12 = self.vm.parse_proto("random12")
         randomBits = self.vm.parse_proto("randomBits")
 
-        # TODO: add patch notation
         randomBits.patch(Mock(return_value=5))
 
         self.assertEqual(random12(), 5)
@@ -41,10 +40,7 @@ class TestSimple(TestCase):
         self.vm.mocks.assert_has_calls([call.randomBits(12)])
 
     def test_pointer(self):
-        # void writeBit(U8 DECL_FASTRAM * bitset, U8 whichBit, Boolean value)
         writeBit = self.vm.parse_proto("writeBit")
-        # writeBit = self.vm.set_func_proto("writeBit",
-        #                                   PointerTo(Unsigned8("bitset")), Unsigned8("whichBit"), Boolean("value"))
 
         memory = PointerTo(Unsigned8())
         memory.alloc(self.vm, 0x55)
@@ -53,19 +49,14 @@ class TestSimple(TestCase):
         self.assertEqual(memory.read(self.vm), 0x59)
 
     def test_string(self):
-        # char DECL_RAM *mystrrev(char DECL_RAM *head, char DECL_RAM *tail)
         mystrrev = self.vm.parse_proto("mystrrev")
-        # mystrrev = self.vm.set_func_proto("mystrrev", PointerTo(Char("head")), PointerTo(Char("tail")),
-        #                                   returns=PointerTo(Char()))
-        # U8 s16toa(S16 _i, char DECL_RAM * const sbuf, U8 buflen)
-        s16toa = self.vm.parse_proto("s16toa")
-        # s16toa = self.vm.set_func_proto("s16toa", Signed16("_i"), PointerTo(Char("sbuf")), Unsigned8("buflen"),
-        #                                 returns=Unsigned8())
 
         memory = PointerTo(ArrayOf(Char()))
         memory.alloc(self.vm, "1234567890")
         self.assertEqual(mystrrev(memory, memory + 9), memory)
         self.assertEqual(memory.read(self.vm), "0987654321")
+
+        s16toa = self.vm.parse_proto("s16toa")
 
         self.assertEqual(s16toa(0, memory, 11), 1)
         self.assertEqual(memory.read(self.vm, 1), "0")
